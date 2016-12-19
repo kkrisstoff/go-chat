@@ -5,8 +5,11 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/kkrisstoff/go-chat/trace"
 )
 
 // templ represents a single template
@@ -32,12 +35,14 @@ func main() {
 	flag.Parse() // parse the flags and extracts the appropriate information
 
 	r := newRoom()
+	r.tracer = trace.New(os.Stdout)
 
 	http.Handle("/", &templateHandler{filename: "chat.html"})
 	http.Handle("/room", r)
 
 	// get the room going
 	go r.run()
+
 	// start the web server
 	log.Println("Starting web server on", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
