@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/kkrisstoff/go-chat/trace"
 	"github.com/stretchr/gomniauth"
@@ -17,24 +16,32 @@ import (
 	"github.com/stretchr/objx"
 )
 
+// set the active Avatar implementation
+var avatars Avatar = TryAvatars{
+	UseFileSystemAvatar,
+	UseAuthAvatar,
+	UseGravatar}
+
 // templ represents a single template
 type templateHandler struct {
-	once     sync.Once
 	filename string
 	templ    *template.Template
 }
 
 // ServeHTTP handles the HTTP request.
 func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	t.once.Do(func() {
+	if t.templ == nil {
 		t.templ = template.Must(template.ParseFiles(filepath.Join("templates", t.filename)))
-	})
+	}
+
 	data := map[string]interface{}{
 		"Host": r.Host,
 	}
+
 	if authCookie, err := r.Cookie("auth"); err == nil {
 		data["UserData"] = objx.MustFromBase64(authCookie.Value)
 	}
+
 	t.templ.Execute(w, data)
 }
 
@@ -59,6 +66,7 @@ func main() {
 	)
 
 	r := newRoom()
+
 	r.tracer = trace.New(os.Stdout)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +75,25 @@ func main() {
 	})
 	http.Handle("/chat", MustAuth(&templateHandler{filename: "chat.html"}))
 	http.Handle("/login", &templateHandler{filename: "login.html"})
+	http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "auth",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+		w.Header().Set("Location", "/chat")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	})
+	http.Handle("/upload", &templateHandler{filename: "upload.html"})
+	http.HandleFunc("/uploader", uploaderHandler)
 	http.HandleFunc("/auth/", loginHandler)
+	http.Handle("/avatars/",
+		// takes http.Handler in, modifies the path by removing the specified prefix,
+		// and passes the functionality onto an inner handler
+		http.StripPrefix("/avatars/",
+			// The http.Dir function allows us to specify which folder we want to expose publicly
+			http.FileServer(http.Dir("../avatars"))))
 	http.Handle("/room", r)
 
 	// assets

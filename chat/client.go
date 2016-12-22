@@ -22,13 +22,14 @@ func (c *client) read() {
 	defer c.socket.Close()
 	for {
 		var msg *message
-		err := c.socket.ReadJSON(&msg)
-		if err != nil {
+		if err := c.socket.ReadJSON(&msg); err != nil {
 			return
 		}
 		msg.When = time.Now()
 		msg.Name = c.userData["name"].(string)
-
+		if avatarURL, ok := c.userData["avatar_url"]; ok {
+			msg.AvatarURL = avatarURL.(string)
+		}
 		c.room.forward <- msg
 	}
 }
